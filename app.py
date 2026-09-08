@@ -1,53 +1,74 @@
 import streamlit as st
-import urllib.parse
+import pandas as pd
 
-st.set_page_config(page_title="Porovnání inzerce aut", page_icon="🚗", layout="centered")
+st.set_page_config(page_title="Tabulka podobných aut", page_icon="🚗", layout="wide")
 
-st.title("🚗 Rychlé porovnání inzerce aut")
-st.write("Zadejte parametry vozidla a aplikace pro vás připraví přímé odkazy na předvyhledané inzeráty na českých webech.")
+st.title("🚗 Vyhledání a tabulka podobných aut")
+st.write("Filtruje data v rozmezí $\pm 1$ rok a $\pm 10\,000$ km od zadaných hodnot.")
 
-with st.form("car_search_form"):
-    col1, col2 = st.columns(2)
-    
+with st.form("car_form"):
+    col1, col2, col3 = st.columns(3)
     with col1:
         brand = st.text_input("Značka", value="Skoda")
-        model = st.text_input("Model / typ", value="Scala")
-        year = st.number_input("Rok výroby", min_value=2000, max_value=2026, value=2020)
-        
+        model = st.text_input("Model", value="Scala")
     with col2:
-        fuel = st.selectbox("Typ paliva", ["Benzín", "Nafta", "Hybrid", "Elektro"])
-        km = st.number_input("Počet kilometrů", min_value=0, max_value=500000, value=85000, step=5000)
-        price = st.number_input("Zadaná cena (Kč)", min_value=0, value=350000, step=10000)
-
-    submitted = st.form_submit_button("Vygenerovat odkazy na inzerci")
+        input_year = st.number_input("Rok výroby", value=2020, min_value=2000, max_value=2026)
+        input_km = st.number_input("Počet kilometrů (km)", value=90000, step=5000)
+    with col3:
+        user_price = st.number_input("Vaše cena (Kč)", value=350000, step=10000)
+        
+    submitted = st.form_submit_button("Filtrovat a zobrazit HTML tabulku")
 
 if submitted:
-    query = f"{brand} {model}"
+    year_min = input_year - 1
+    year_max = input_year + 1
+    km_min = max(0, input_km - 10000)
+    km_max = input_km + 10000
     
-    sauto_url = f"https://www.sauto.cz/inzerce/osobni/{urllib.parse.quote(brand.lower())}/{urllib.parse.quote(model.lower())}"
-    tipcars_url = f"https://www.tipcars.com/zarazeni?s=hledat&q={urllib.parse.quote(query)}"
-    bazos_url = f"https://auto.bazos.cz/inzerce/?hledat={urllib.parse.quote(query)}&rubriky=auto"
+    # Vzorová databáze inzerátů (zde v reálném provozu probíhá napojení na data ze scraperu nebo API)
+    data = [
+        {"Portál": "Sauto.cz", "Název": f"{brand} {model} 1.0 TSI", "Rok": 2020, "Nájezd (km)": 85000, "Cena (Kč)": 340000, "Odkaz": "https://www.sauto.cz"},
+        {"Portál": "TipCars", "Název": f"{brand} {model} 1.5 TSI", "Rok": 2019, "Nájezd (km)": 95000, "Cena (Kč)": 320000, "Odkaz": "https://www.tipcars.com"},
+        {"Portál": "Bazoš.cz", "Název": f"{brand} {model} TDI", "Rok": 2021, "Nájezd (km)": 81000, "Cena (Kč)": 365000, "Odkaz": "https://auto.bazos.cz"},
+        {"Portál": "Sauto.cz", "Název": f"{brand} {model} Style", "Rok": 2020, "Nájezd (km)": 105000, "Cena (Kč)": 310000, "Odkaz": "https://www.sauto.cz"},
+        {"Portál": "TipCars", "Název": f"{brand} {model} Old", "Rok": 2017, "Nájezd (km)": 140000, "Cena (Kč)": 250000, "Odkaz": "https://www.tipcars.com"},
+    ]
     
-    st.success("Parametry byly úspěšně zpracovány!")
+    df = pd.DataFrame(data)
     
-    st.markdown("**Přehled odkazů na trh**")
+    # Filtrování podle tolerancí: Rok ±1, Nájezd ±10000
+    filtered_df = df[
+        (df["Rok"] >= year_min) & (df["Rok"] <= year_max) &
+        (df["Nájezd (km)"] >= km_min) & (df["Nájezd (km)"] <= km_max)
+    ]
     
-    col_a, col_b, col_c = st.columns(3)
+    st.success(f"Nalezeno {len(filtered_df)} vozů splňujících kritéria (Rok: {year_min}–{year_max}, Nájezd: {km_min:,}–{km_max:,} km).")
     
-    with col_a:
-        st.markdown("**🇨🇿 Sauto.cz**")
-        st.markdown(f"[Otevřít výsledky]({sauto_url})")
+    if not filtered_df.empty:
+        # Vytvoření vlastní HTML tabulky s proklikávacími odkazy
+        html_table = "<table style='width:100%; border-collapse: collapse; font-family: sans-serif;'>" \
+                     "<tr style='background-color: #f2f2f2;'>" \
+                     "<th style='border: 1px solid #ddd; padding: 10px; text-align: left;'>Portál</th>" \
+                     "<th style='border: 1px solid #ddd; padding: 10px; text-align: left;'>Model</th>" \
+                     "<th style='border: 1px solid #ddd; padding: 10px; text-align: center;'>Rok</th>" \
+                     "<th style='border: 1px solid #ddd; padding: 10px; text-align: right;'>Nájezd</th>" \
+                     "<th style='border: 1px solid #ddd; padding: 10px; text-align: right;'>Cena</th>" \
+                     "<th style='border: 1px solid #ddd; padding: 10px; text-align: center;'>Inzerát</th>" \
+                     "</tr>"
         
-    with col_b:
-        st.markdown("**🚗 TipCars.com**")
-        st.markdown(f"[Otevřít výsledky]({tipcars_url})")
+        for _, row in filtered_df.iterrows():
+            html_table += f"<tr>" \
+                          f"<td style='border: 1px solid #ddd; padding: 8px;'>{row['Portál']}</td>" \
+                          f"<td style='border: 1px solid #ddd; padding: 8px;'>{row['Název']}</td>" \
+                          f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{row['Rok']}</td>" \
+                          f"<td style='border: 1px solid #ddd; padding: 8px; text-align: right;'>{row['Nájezd (km)']:,} km</td>" \
+                          f"<td style='border: 1px solid #ddd; padding: 8px; text-align: right;'>{row['Cena (Kč)']:,.0f} Kč</td>" \
+                          f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'><a href='{row['Odkaz']}' target='_blank'>Otevřít</a></td>" \
+                          f"</tr>"
         
-    with col_c:
-        st.markdown("**🛒 Bazoš.cz**")
-        st.markdown(f"[Otevřít výsledky]({bazos_url})")
+        html_table += "</table>"
         
-    st.markdown("---")
-    st.info(
-        f"Porovnávané auto: **{brand} {model}** | Rok: **{year}** | "
-        f"Nájezd: **{km:,} km** | Vaše cena: **{price:,.0f} Kč**"
-    )
+        # Vykreslení HTML tabulky v aplikaci
+        st.markdown(html_table, unsafe_allow_html=True)
+    else:
+        st.warning("V tomto rozmezí nebyla v datech nalezena žádná auta. Upravte parametry nebo rozšiřte datovou základnu.")
