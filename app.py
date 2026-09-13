@@ -1,56 +1,58 @@
 import streamlit as st
-import urllib.parse
+import cv2
+import numpy as np
+from PIL import Image
+import io
 
-st.set_page_config(page_title="Chytré vyhledávání aut", page_icon="🚗", layout="centered")
+# Nastavení stránky
+st.set_page_config(page_title="Odstraňovač hvězdičky", page_icon="✨", layout="centered")
 
-st.title("🚗 Vyhledávač aut s přímými filtry na weby")
-st.write("Zadejte parametry vozu. Aplikace spočítá toleranci ($\pm 1$ rok, $\pm 10\,000$ km) a otevře weby s hotovým filtrováním.")
+st.title("✨ Odstraňovač hvězdičky z pravého rohu")
+st.write("Nahrajte fotku a aplikace automaticky odstraní objekt v pravém dolním rohu pomocí AI inpaintingu.")
 
-with st.form("car_form"):
-    col1, col2 = st.columns(2)
-    with col1:
-        brand = st.text_input("Značka", value="Skoda")
-        model = st.text_input("Model", value="Scala")
-        input_year = st.number_input("Rok výroby", value=2020, min_value=2000, max_value=2026)
-    with col2:
-        input_km = st.number_input("Nájezd (km)", value=90000, step=5000)
-        user_price = st.number_input("Maximální cena (Kč)", value=350000, step=10000)
+# Nahrání souboru přes webové rozhraní
+uploaded_file = st.file_uploader("Vyberte obrázek (JPG, PNG)", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    # Načtení obrázku pro OpenCV
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    
+    h, w, _ = img.shape
+    
+    # Nastavení velikosti oblasti v pravém dolním rohu
+    box_size = st.slider("Velikost oblasti k odstranění (v pixelech od pravého dolního rohu)", min_value=50, max_value=500, value=120, step=10)
+    
+    # Zobrazení originálu s vyznačenou oblastí (pro kontrolu)
+    preview_img = img.copy()
+    cv2.rectangle(preview_img, (w - box_size, h - box_size), (w, h), (0, 0, 255), 2) # Červený rámeček
+    preview_rgb = cv2.cvtColor(preview_img, cv2.COLOR_BGR2RGB)
+    
+    st.image(preview_rgb, caption="Oblast určená k odstranění (označená červeně)", use_container_width=True)
+    
+    if st.button("Odstranit hvězdičku a vygenerovat výsledek", type="primary"):
+        # Vytvoření masky pro inpainting
+        mask = np.zeros((h, w), dtype=np.uint8)
+        mask[h - box_size:h, w - box_size:w] = 255
         
-    submitted = st.form_submit_button("Vygenerovat filtrované odkazy")
-
-if submitted:
-    # Výpočet tolerancí
-    year_min = input_year - 1
-    year_max = input_year + 1
-    km_min = max(0, input_km - 10000)
-    km_max = input_km + 10000
-    
-    query = f"{brand} {model}"
-    
-    # Sestavení odkazů s parametry
-    sauto_url = f"https://www.sauto.cz/inzerce/osobni/{urllib.parse.quote(brand.lower())}/{urllib.parse.quote(model.lower())}?rok-vyroby-od={year_min}&rok-vyroby-do={year_max}&tachometr-od={km_min}&tachometr-do={km_max}"
-    tipcars_url = f"https://www.tipcars.com/zarazeni?s=hledat&q={urllib.parse.quote(query)}"
-    bazos_url = f"https://auto.bazos.cz/inzerce/?hledat={urllib.parse.quote(query)}&rubriky=auto"
-    
-    st.success("Filtry úspěšně spočítány!")
-    
-    st.info(
-        f"📊 **Hledané rozmezí na internetu:**\n"
-        f"- Rok výroby: **{year_min} až {year_max}**\n"
-        f"- Nájezd: **{km_min:,} až {km_max:,} km**\n"
-        f"- Maximální cena: **{user_price:,.0f} Kč**"
-    )
-    
-    st.markdown("---")
-    st.markdown("### Klikněte pro zobrazení výsledků na webech:")
-    
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        st.markdown(f"🇨🇿 **[Sauto.cz]({sauto_url})**")
-        st.write("Otevře Sauto s nastaveným rokem a nájezdem.")
-    with col_b:
-        st.markdown(f"🚗 **[TipCars.com]({tipcars_url})**")
-        st.write("Otevře vyhledávání modelu.")
-    with col_c:
-        st.markdown(f"🛒 **[Bazoš.cz]({bazos_url})**")
-        st.write("Otevře inzerci Bazoše.")
+        # Algoritmus domaluje pozadí namísto hvězdičky
+        cleaned_img = cv2.inpaint(img, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        
+        # Převod zpět do RGB pro Streamlit
+        cleaned_rgb = cv2.cvtColor(cleaned_img, cv2.COLOR_BGR2RGB)
+        final_pil = Image.fromarray(cleaned_rgb)
+        
+        st.success("Hvězdička byla úspěšně odstraněna!")
+        st.image(final_pil, caption="Výsledek bez hvězdičky", use_container_width=True)
+        
+        # Tlačítko pro stažení výsledku
+        buf = io.BytesIO()
+        final_pil.save(buf, format="JPEG")
+        byte_im = buf.getvalue()
+        
+        st.download_button(
+            label="Stáhnout upravenou fotku",
+            data=byte_im,
+            file_name="bez_hvezdicky.jpg",
+            mime="image/jpeg"
+        )
